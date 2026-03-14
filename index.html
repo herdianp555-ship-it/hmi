@@ -1,0 +1,608 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp, getApps, getApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInWithEmailAndPassword, 
+  onAuthStateChanged, 
+  signOut 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  collection, 
+  addDoc, 
+  updateDoc, 
+  deleteDoc, 
+  doc, 
+  onSnapshot, 
+  query, 
+  orderBy, 
+  limit,
+  timestamp
+} from 'firebase/firestore';
+import { 
+  getStorage, 
+  ref, 
+  uploadBytes, 
+  getDownloadURL 
+} from 'firebase/storage';
+import { 
+  Layout, 
+  Home, 
+  Newspaper, 
+  Calendar, 
+  Users, 
+  Image as ImageIcon, 
+  Book, 
+  LogIn, 
+  Plus, 
+  Trash2, 
+  Edit, 
+  LogOut, 
+  Menu, 
+  X,
+  ChevronRight,
+  Upload,
+  Bell
+} from 'lucide-react';
+
+// --- FIREBASE CONFIGURATION ---
+const firebaseConfig = {
+  apiKey: "AIzaSyC_zRk3lOo5DMy1JBYz-Gp9CN-rJciRbn0",
+  authDomain: "hmi-staikha.firebaseapp.com",
+  projectId: "hmi-staikha",
+  storageBucket: "hmi-staikha.firebasestorage.app",
+  messagingSenderId: "806712578223",
+  appId: "1:806712578223:web:7660b9c8fdf5ae59f6445a",
+  measurementId: "G-MM43KSGVQ3"
+};
+
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const storage = getStorage(app);
+
+// --- HELPER COMPONENTS ---
+
+const Card = ({ children, className = "" }) => (
+  <div className={`bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden ${className}`}>
+    {children}
+  </div>
+);
+
+const Button = ({ children, onClick, variant = "primary", className = "", type = "button", disabled = false }) => {
+  const base = "px-4 py-2 rounded-lg font-medium transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-50";
+  const variants = {
+    primary: "bg-green-700 text-white hover:bg-green-800",
+    secondary: "bg-gray-100 text-gray-700 hover:bg-gray-200",
+    danger: "bg-red-500 text-white hover:bg-red-600",
+    outline: "border-2 border-green-700 text-green-700 hover:bg-green-50"
+  };
+  return (
+    <button type={type} onClick={onClick} className={`${base} ${variants[variant]} ${className}`} disabled={disabled}>
+      {children}
+    </button>
+  );
+};
+
+const Input = ({ label, ...props }) => (
+  <div className="mb-4">
+    <label className="block text-sm font-semibold text-gray-700 mb-1 uppercase tracking-wider">{label}</label>
+    <input {...props} className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 focus:border-transparent outline-none transition-all" />
+  </div>
+);
+
+// --- MAIN APP COMPONENT ---
+
+export default function App() {
+  const [user, setUser] = useState(null);
+  const [currentPage, setCurrentPage] = useState('home');
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [showLoginModal, setShowLoginModal] = useState(false);
+
+  // States for Data
+  const [news, setNews] = useState([]);
+  const [agenda, setAgenda] = useState([]);
+  const [pengurus, setPengurus] = useState([]);
+  const [galeri, setGaleri] = useState([]);
+  const [perpus, setPerpus] = useState([]);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (u) => setUser(u));
+    
+    // Listeners for Firestore
+    const unsubNews = onSnapshot(query(collection(db, "news"), orderBy("tanggal", "desc")), (s) => setNews(s.docs.map(d => ({id: d.id, ...d.data()}))));
+    const unsubAgenda = onSnapshot(query(collection(db, "agenda"), orderBy("tanggal", "desc")), (s) => setAgenda(s.docs.map(d => ({id: d.id, ...d.data()}))));
+    const unsubPengurus = onSnapshot(collection(db, "pengurus"), (s) => setPengurus(s.docs.map(d => ({id: d.id, ...d.data()}))));
+    const unsubGaleri = onSnapshot(collection(db, "galeri"), (s) => setGaleri(s.docs.map(d => ({id: d.id, ...d.data()}))));
+    const unsubPerpus = onSnapshot(collection(db, "perpustakaan"), (s) => setPerpus(s.docs.map(d => ({id: d.id, ...d.data()}))));
+
+    return () => {
+      unsubscribe(); unsubNews(); unsubAgenda(); unsubPengurus(); unsubGaleri(); unsubPerpus();
+    };
+  }, []);
+
+  const handleLogin = async (e) => {
+    e.preventDefault();
+    const email = e.target.email.value;
+    const password = e.target.password.value;
+    try {
+      setLoading(true);
+      await signInWithEmailAndPassword(auth, email, password);
+      setShowLoginModal(false);
+    } catch (err) {
+      alert("Login Gagal: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleLogout = () => signOut(auth);
+
+  const navigateTo = (page) => {
+    setCurrentPage(page);
+    setIsMenuOpen(false);
+    window.scrollTo(0, 0);
+  };
+
+  // UI Sections
+  const Header = () => (
+    <nav className="fixed top-0 left-0 right-0 bg-white shadow-md z-50">
+      <div className="max-w-6xl mx-auto px-4 py-3 flex justify-between items-center">
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => navigateTo('home')}>
+          <div className="bg-green-700 w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-xl">H</div>
+          <div>
+            <h1 className="text-green-800 font-black text-lg leading-none">HMI STAIKHA</h1>
+            <p className="text-[10px] text-gray-500 font-medium">Yakin Usaha Sampai</p>
+          </div>
+        </div>
+
+        <div className="hidden md:flex gap-6 text-sm font-bold text-gray-600">
+          {['home', 'news', 'agenda', 'pengurus', 'galeri', 'perpus'].map((p) => (
+            <button key={p} onClick={() => navigateTo(p)} className={`${currentPage === p ? 'text-green-700 border-b-2 border-green-700' : 'hover:text-green-700'} uppercase transition-all pb-1`}>
+              {p === 'perpus' ? 'Perpustakaan' : p === 'news' ? 'Berita' : p}
+            </button>
+          ))}
+          {user ? (
+            <button onClick={() => navigateTo('admin')} className="bg-green-100 text-green-800 px-3 py-1 rounded">Admin</button>
+          ) : (
+            <button onClick={() => setShowLoginModal(true)} className="text-gray-400 hover:text-green-700"><LogIn size={20}/></button>
+          )}
+        </div>
+
+        <button className="md:hidden text-green-800" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+          {isMenuOpen ? <X size={28}/> : <Menu size={28}/>}
+        </button>
+      </div>
+
+      {/* Mobile Menu */}
+      {isMenuOpen && (
+        <div className="md:hidden bg-white border-t p-4 flex flex-col gap-4 animate-in fade-in slide-in-from-top-4 duration-300">
+          {['home', 'news', 'agenda', 'pengurus', 'galeri', 'perpus'].map((p) => (
+            <button key={p} onClick={() => navigateTo(p)} className="text-left py-2 font-bold text-gray-700 border-b border-gray-50 uppercase">
+              {p === 'perpus' ? 'Perpustakaan Digital' : p === 'news' ? 'Berita Organisasi' : p}
+            </button>
+          ))}
+          {user ? (
+             <button onClick={() => navigateTo('admin')} className="text-left py-2 font-bold text-green-700">DASHBOARD ADMIN</button>
+          ) : (
+            <button onClick={() => { setShowLoginModal(true); setIsMenuOpen(false); }} className="text-left py-2 font-bold text-gray-400">LOGIN ADMIN</button>
+          )}
+        </div>
+      )}
+    </nav>
+  );
+
+  const Footer = () => (
+    <footer className="bg-gray-900 text-white py-12 mt-20">
+      <div className="max-w-6xl mx-auto px-4 grid md:grid-cols-3 gap-8 text-center md:text-left">
+        <div>
+          <h2 className="text-2xl font-black mb-4">HMI STAIKHA</h2>
+          <p className="text-gray-400 text-sm">Himpunan Mahasiswa Islam Komisariat STAI Kharisma Cicurug Sukabumi.</p>
+        </div>
+        <div>
+          <h3 className="font-bold mb-4 uppercase text-green-500">Navigasi</h3>
+          <div className="flex flex-col gap-2 text-sm text-gray-300">
+            <button onClick={() => navigateTo('home')}>Beranda</button>
+            <button onClick={() => navigateTo('news')}>Berita</button>
+            <button onClick={() => navigateTo('agenda')}>Agenda</button>
+          </div>
+        </div>
+        <div>
+          <h3 className="font-bold mb-4 uppercase text-green-500">Motto</h3>
+          <p className="italic text-gray-400">"Bahagia HMI, Jayalah Kohati, Yakin Usaha Sampai!"</p>
+        </div>
+      </div>
+      <div className="border-t border-gray-800 mt-8 pt-8 text-center text-xs text-gray-500">
+        &copy; {new Date().getFullYear()} HMI STAI Kharisma. All Rights Reserved.
+      </div>
+    </footer>
+  );
+
+  // PAGE COMPONENTS
+  const HomePage = () => (
+    <div className="animate-in fade-in duration-700">
+      {/* Hero Banner */}
+      <section className="relative h-[80vh] flex items-center justify-center overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-b from-green-900/80 to-black/90 z-10"></div>
+        <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1541339907198-e08756ebafe3?auto=format&fit=crop&q=80')] bg-cover bg-center"></div>
+        <div className="relative z-20 text-center px-4 max-w-4xl">
+          <span className="bg-green-600 text-white px-4 py-1 rounded-full text-xs font-bold tracking-widest uppercase mb-6 inline-block">HMI STAI KHARISMA</span>
+          <h1 className="text-5xl md:text-7xl font-black text-white mb-4 drop-shadow-lg">YAKIN USAHA SAMPAI</h1>
+          <p className="text-xl md:text-2xl text-green-100 font-light mb-8 max-w-2xl mx-auto leading-relaxed">Terbinanya insan akademis, pencipta, pengabdi yang bernafaskan Islam.</p>
+          <div className="flex flex-col md:flex-row gap-4 justify-center">
+            <Button onClick={() => navigateTo('news')} className="px-8 py-4 text-lg">Baca Berita Terbaru</Button>
+            <Button onClick={() => navigateTo('agenda')} variant="outline" className="px-8 py-4 text-lg border-white text-white hover:bg-white hover:text-green-900">Lihat Agenda</Button>
+          </div>
+        </div>
+      </section>
+
+      {/* Latest News */}
+      <section className="max-w-6xl mx-auto px-4 py-20">
+        <div className="flex justify-between items-end mb-10">
+          <div>
+            <h2 className="text-3xl font-black text-gray-900">BERITA TERBARU</h2>
+            <div className="h-1.5 w-20 bg-green-600 mt-2"></div>
+          </div>
+          <button onClick={() => navigateTo('news')} className="text-green-700 font-bold flex items-center gap-1">Lihat Semua <ChevronRight size={20}/></button>
+        </div>
+        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {news.slice(0, 4).map((item) => (
+            <Card key={item.id} className="group cursor-pointer" onClick={() => navigateTo('news')}>
+              <div className="relative h-48 overflow-hidden">
+                <img src={item.image || 'https://via.placeholder.com/400x300?text=HMI+STAIKHA'} alt={item.judul} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
+              </div>
+              <div className="p-4">
+                <p className="text-[10px] text-green-600 font-bold uppercase mb-2">{item.tanggal}</p>
+                <h3 className="font-bold text-gray-800 line-clamp-2 leading-tight h-10">{item.judul}</h3>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+
+  const NewsPage = () => (
+    <div className="pt-24 max-w-5xl mx-auto px-4 min-h-screen">
+       <h1 className="text-4xl font-black text-gray-900 mb-8 text-center">WARTA KOMISARIAT</h1>
+       <div className="grid gap-8">
+         {news.map((item) => (
+           <div key={item.id} className="bg-white rounded-2xl overflow-hidden shadow-xl border border-gray-100 flex flex-col">
+              <div className="relative h-64 md:h-96">
+                <img src={item.image} className="w-full h-full object-cover" alt={item.judul} />
+                <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent"></div>
+                <div className="absolute bottom-0 p-6 md:p-10 w-full">
+                  <p className="text-green-400 font-bold text-sm mb-2 uppercase">{item.tanggal}</p>
+                  <h2 className="text-2xl md:text-4xl font-black text-white leading-tight">{item.judul}</h2>
+                </div>
+              </div>
+              <div className="p-6 md:p-10 prose prose-green max-w-none text-gray-700 leading-relaxed whitespace-pre-wrap">
+                {item.isi}
+              </div>
+           </div>
+         ))}
+       </div>
+    </div>
+  );
+
+  const AgendaPage = () => (
+    <div className="pt-24 max-w-4xl mx-auto px-4 min-h-screen">
+      <h1 className="text-3xl font-black text-gray-900 mb-2">AGENDA KEGIATAN</h1>
+      <p className="text-gray-500 mb-8">Ikuti berbagai aktivitas intelektual dan sosial kami.</p>
+      <div className="space-y-6">
+        {agenda.map((item) => (
+          <div key={item.id} className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-700 flex flex-col md:flex-row gap-6">
+            <div className="md:w-32 flex flex-col items-center justify-center bg-gray-50 rounded-lg p-4 border border-gray-100">
+               <span className="text-green-700 text-3xl font-black">{item.tanggal?.split('-')[2] || '??'}</span>
+               <span className="text-gray-500 font-bold text-xs uppercase">{new Date(item.tanggal).toLocaleString('id-ID', { month: 'short', year: 'numeric' })}</span>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-gray-800 mb-2">{item.judul}</h3>
+              <div className="flex items-center gap-2 text-sm text-gray-500 mb-3 font-medium bg-gray-50 w-fit px-2 py-1 rounded">
+                <span className="text-green-600 underline">Lokasi:</span> {item.lokasi}
+              </div>
+              <p className="text-gray-600 text-sm leading-relaxed">{item.deskripsi}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const PengurusPage = () => (
+    <div className="pt-24 max-w-6xl mx-auto px-4 min-h-screen">
+      <div className="text-center mb-16">
+        <h1 className="text-4xl font-black text-gray-900 mb-4">STRUKTUR KEPENGURUSAN</h1>
+        <p className="text-gray-600 max-w-2xl mx-auto">Para penggerak roda organisasi HMI Komisariat STAI Kharisma periode ini.</p>
+      </div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-10">
+        {pengurus.map((p) => (
+          <div key={p.id} className="text-center group">
+            <div className="relative mb-4 inline-block">
+              <div className="w-32 h-32 md:w-48 md:h-48 rounded-full overflow-hidden border-4 border-green-700 mx-auto shadow-lg group-hover:scale-105 transition-transform">
+                <img src={p.foto || 'https://via.placeholder.com/200?text=HMI'} className="w-full h-full object-cover" alt={p.nama} />
+              </div>
+            </div>
+            <h3 className="font-black text-gray-800 text-lg uppercase">{p.nama}</h3>
+            <p className="text-green-700 font-bold text-sm tracking-widest">{p.jabatan}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const GaleriPage = () => (
+    <div className="pt-24 max-w-6xl mx-auto px-4 min-h-screen">
+      <h1 className="text-3xl font-black mb-8 text-center">GALERI KEGIATAN</h1>
+      <div className="columns-1 md:columns-3 gap-4 space-y-4">
+        {galeri.map((g) => (
+          <div key={g.id} className="break-inside-avoid rounded-xl overflow-hidden shadow-md">
+            <img src={g.url} className="w-full hover:opacity-90 transition-opacity" alt="Galeri HMI" />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  const PerpusPage = () => (
+    <div className="pt-24 max-w-4xl mx-auto px-4 min-h-screen">
+      <h1 className="text-3xl font-black mb-2">PERPUSTAKAAN DIGITAL</h1>
+      <p className="text-gray-500 mb-8">Kumpulan literatur, materi pengaderan, dan dokumen organisasi.</p>
+      <div className="grid gap-4">
+        {perpus.map((doc) => (
+          <div key={doc.id} className="flex items-center justify-between p-5 bg-white rounded-xl border border-gray-100 shadow-sm hover:border-green-300 transition-colors">
+            <div className="flex items-center gap-4">
+              <div className="bg-red-50 p-3 rounded-lg text-red-600">
+                <Book size={24} />
+              </div>
+              <h3 className="font-bold text-gray-800">{doc.judul}</h3>
+            </div>
+            <a href={doc.link} target="_blank" rel="noopener noreferrer" className="bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2">
+              Buka <ChevronRight size={16}/>
+            </a>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+
+  // ADMIN DASHBOARD
+  const AdminDashboard = () => {
+    const [activeTab, setActiveTab] = useState('news');
+    const [uploading, setUploading] = useState(false);
+    
+    const handleAddNews = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      setUploading(true);
+      try {
+        let imageUrl = "";
+        if (form.foto.files[0]) {
+          const imgRef = ref(storage, `uploads/news_${Date.now()}`);
+          const snap = await uploadBytes(imgRef, form.foto.files[0]);
+          imageUrl = await getDownloadURL(snap.ref);
+        }
+        await addDoc(collection(db, "news"), {
+          judul: form.judul.value,
+          tanggal: form.tanggal.value,
+          isi: form.isi.value,
+          image: imageUrl,
+          createdAt: new Date()
+        });
+        // Logic for Push Notif would go here
+        alert("Berita berhasil dipublikasi!");
+        form.reset();
+      } catch (err) { alert(err.message); }
+      finally { setUploading(false); }
+    };
+
+    const handleDelete = async (coll, id) => {
+      if(confirm("Hapus data ini?")) await deleteDoc(doc(db, coll, id));
+    };
+
+    const handleAddGeneric = async (coll, data, file) => {
+      setUploading(true);
+      try {
+        let url = "";
+        if (file) {
+          const r = ref(storage, `uploads/${coll}_${Date.now()}`);
+          const s = await uploadBytes(r, file);
+          url = await getDownloadURL(s.ref);
+        }
+        await addDoc(collection(db, coll), { ...data, ...(url ? { [coll === 'galeri' ? 'url' : 'foto']: url } : {}) });
+        alert("Data ditambahkan!");
+      } catch (e) { alert(e.message); }
+      finally { setUploading(false); }
+    };
+
+    return (
+      <div className="pt-24 max-w-6xl mx-auto px-4 min-h-screen">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+          <h1 className="text-3xl font-black text-gray-900 uppercase">Dashboard Admin</h1>
+          <Button variant="danger" onClick={handleLogout}><LogOut size={18}/> Logout</Button>
+        </div>
+
+        <div className="flex overflow-x-auto gap-2 mb-8 bg-gray-100 p-1 rounded-xl">
+          {['news', 'agenda', 'pengurus', 'galeri', 'perpustakaan'].map((tab) => (
+            <button key={tab} onClick={() => setActiveTab(tab)} className={`flex-1 min-w-[120px] py-2 px-4 rounded-lg font-bold text-sm uppercase transition-all ${activeTab === tab ? 'bg-white text-green-700 shadow-sm' : 'text-gray-500 hover:bg-gray-200'}`}>
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid lg:grid-cols-3 gap-8">
+          {/* Form Section */}
+          <div className="lg:col-span-1">
+            <Card className="p-6 sticky top-24">
+              <h2 className="text-xl font-bold mb-6 flex items-center gap-2"><Plus size={20}/> Tambah {activeTab}</h2>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const f = e.target;
+                if (activeTab === 'news') handleAddNews(e);
+                else if (activeTab === 'agenda') handleAddGeneric('agenda', { judul: f.judul.value, tanggal: f.tanggal.value, lokasi: f.lokasi.value, deskripsi: f.deskripsi.value });
+                else if (activeTab === 'pengurus') handleAddGeneric('pengurus', { nama: f.nama.value, jabatan: f.jabatan.value }, f.foto.files[0]);
+                else if (activeTab === 'galeri') handleAddGeneric('galeri', {}, f.foto.files[0]);
+                else if (activeTab === 'perpustakaan') handleAddGeneric('perpustakaan', { judul: f.judul.value, link: f.link.value });
+                if (activeTab !== 'news') f.reset();
+              }} className="space-y-2">
+                
+                {activeTab === 'news' && (
+                  <>
+                    <Input label="Judul Berita" name="judul" required />
+                    <Input label="Tanggal" type="date" name="tanggal" required />
+                    <div className="mb-4">
+                      <label className="block text-sm font-semibold text-gray-700 mb-1 uppercase tracking-wider">Isi Berita</label>
+                      <textarea name="isi" rows="6" className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-600 outline-none" required></textarea>
+                    </div>
+                    <Input label="Foto Cover" type="file" name="foto" accept="image/*" />
+                  </>
+                )}
+
+                {activeTab === 'agenda' && (
+                   <>
+                    <Input label="Nama Kegiatan" name="judul" required />
+                    <Input label="Tanggal" type="date" name="tanggal" required />
+                    <Input label="Lokasi" name="lokasi" required />
+                    <Input label="Deskripsi Singkat" name="deskripsi" required />
+                  </>
+                )}
+
+                {activeTab === 'pengurus' && (
+                  <>
+                    <Input label="Nama Lengkap" name="nama" required />
+                    <Input label="Jabatan" name="jabatan" required />
+                    <Input label="Foto Formal" type="file" name="foto" accept="image/*" required />
+                  </>
+                )}
+
+                {activeTab === 'galeri' && (
+                   <Input label="Pilih Foto Kegiatan" type="file" name="foto" accept="image/*" required />
+                )}
+
+                {activeTab === 'perpustakaan' && (
+                  <>
+                    <Input label="Judul Dokumen" name="judul" required />
+                    <Input label="Link Google Drive" name="link" required />
+                  </>
+                )}
+
+                <Button type="submit" className="w-full mt-4" disabled={uploading}>
+                  {uploading ? "Sedang Mengirim..." : "Simpan Data"}
+                </Button>
+              </form>
+            </Card>
+          </div>
+
+          {/* List Section */}
+          <div className="lg:col-span-2 space-y-4">
+            <h2 className="text-xl font-bold mb-4">Daftar Data</h2>
+            {(activeTab === 'news' ? news : activeTab === 'agenda' ? agenda : activeTab === 'pengurus' ? pengurus : activeTab === 'galeri' ? galeri : perpus).map(item => (
+              <div key={item.id} className="bg-white p-4 rounded-xl flex justify-between items-center shadow-sm border border-gray-100">
+                <div className="flex items-center gap-4">
+                  {(item.image || item.foto || item.url) && (
+                    <img src={item.image || item.foto || item.url} className="w-12 h-12 rounded object-cover" />
+                  )}
+                  <div>
+                    <p className="font-bold text-gray-800">{item.judul || item.nama || 'Foto Galeri'}</p>
+                    <p className="text-xs text-gray-500">{item.tanggal || item.jabatan || ''}</p>
+                  </div>
+                </div>
+                <button onClick={() => handleDelete(activeTab === 'perpustakaan' ? 'perpustakaan' : activeTab, item.id)} className="text-red-400 hover:text-red-600 p-2">
+                  <Trash2 size={20}/>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div className="bg-slate-50 min-h-screen font-sans text-gray-900 selection:bg-green-100 selection:text-green-900">
+      <Header />
+      
+      <main>
+        {currentPage === 'home' && <HomePage />}
+        {currentPage === 'news' && <NewsPage />}
+        {currentPage === 'agenda' && <AgendaPage />}
+        {currentPage === 'pengurus' && <PengurusPage />}
+        {currentPage === 'galeri' && <GaleriPage />}
+        {currentPage === 'perpus' && <PerpusPage />}
+        {currentPage === 'admin' && user && <AdminDashboard />}
+      </main>
+
+      <Footer />
+
+      {/* Login Modal */}
+      {showLoginModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+          <Card className="w-full max-w-md p-8 animate-in zoom-in duration-200">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-2xl font-black text-green-800">LOGIN ADMIN</h2>
+              <button onClick={() => setShowLoginModal(false)}><X/></button>
+            </div>
+            <form onSubmit={handleLogin}>
+              <Input label="Email Address" type="email" name="email" placeholder="admin@hmistaikha.id" required />
+              <Input label="Password" type="password" name="password" placeholder="••••••••" required />
+              <Button type="submit" className="w-full h-12 text-lg" disabled={loading}>
+                {loading ? "Menghubungkan..." : "Masuk"}
+              </Button>
+            </form>
+          </Card>
+        </div>
+      )}
+
+      {/* PWA Floating Install (Dummy logic for showcase) */}
+      <div className="fixed bottom-6 right-6 z-50">
+        <button className="bg-green-700 text-white w-14 h-14 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 transition-transform md:hidden">
+          <Bell size={24}/>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// --- PWA ASSETS & CONFIG (INSTRUCTIONS) ---
+/*
+  Untuk membuat ini PWA sempurna di Netlify:
+  
+  1. Buat file `public/manifest.json`:
+  {
+    "name": "HMI STAIKHA",
+    "short_name": "STAIKHA",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#ffffff",
+    "theme_color": "#15803d",
+    "icons": [
+      {
+        "src": "icon-192.png",
+        "sizes": "192x192",
+        "type": "image/png"
+      },
+      {
+        "src": "icon-512.png",
+        "sizes": "512x512",
+        "type": "image/png"
+      }
+    ]
+  }
+
+  2. Buat file `public/sw.js` (Service Worker):
+  self.addEventListener('install', (e) => {
+    e.waitUntil(caches.open('hmi-v1').then((cache) => cache.addAll(['/', '/index.html'])));
+  });
+  self.addEventListener('fetch', (e) => {
+    e.respondWith(caches.match(e.request).then((res) => res || fetch(e.request)));
+  });
+
+  3. Register SW di `main.jsx`:
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js');
+    });
+  }
+*/
